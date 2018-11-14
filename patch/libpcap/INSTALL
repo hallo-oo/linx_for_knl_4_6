@@ -1,0 +1,8 @@
+Download libpcap-1.3.0.tar.gz to <mydir>.
+
+Copy libpcap-1.3.0-linxtrace-001.patch to <mydir>. 
+
+> cd <mydir>
+> tar -xvf libpcap-1.3.0.tar.gz
+> patch -p1 < libpcap-1.3.0-linxtrace-001.patch
+> cd tcpdump-1.3.0
