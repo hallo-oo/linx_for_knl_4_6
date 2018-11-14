@@ -62,7 +62,7 @@ static inline struct sock *sk_alloc_compat(void *net, int pf, int prio,
 #if(LINUX_VERSION_CODE < KERNEL_VERSION(2,6,24))
 	return sk_alloc(pf, prio, &prot, 1);
 #else
-	return sk_alloc(net, pf, prio, &prot);
+	return sk_alloc(net, pf, prio, &prot, 0);
 #endif
 #else
 	return sk_alloc(pf, prio, 1, sk_cachep);

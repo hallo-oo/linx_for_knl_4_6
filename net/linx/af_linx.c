@@ -545,7 +545,7 @@ static int linx_wait_for_packet(struct sock *sk, int *err, long *timeo_p)
 	 * process state to interruptable. */
 	prepare_to_wait_exclusive(sk_sleep(sk), &wait, TASK_INTERRUPTIBLE);
 
-	set_bit(SOCK_ASYNC_WAITDATA, &sk->sk_socket->flags);
+	sk_set_bit(SOCKWQ_ASYNC_NOSPACE, sk);
 
 	/* Make sure the task still needs to sleep. */
 
@@ -569,7 +569,7 @@ static int linx_wait_for_packet(struct sock *sk, int *err, long *timeo_p)
 	error = 0;
 	*timeo_p = schedule_timeout(*timeo_p);
       out:
-	clear_bit(SOCK_ASYNC_WAITDATA, &sk->sk_socket->flags);
+	sk_clear_bit(SOCKWQ_ASYNC_WAITDATA, sk);
 	finish_wait(sk_sleep(sk), &wait);
 	return error;
       interrupted:
@@ -979,7 +979,7 @@ static struct sk_buff *linx_alloc_send_pskb(struct sock *sk,
 
 	if (unlikely(in_atomic()))
 		sk_allocation = sk->sk_allocation &
-		    (~(__GFP_WAIT | __GFP_IO | __GFP_HIGH));
+		    (~(__GFP_RECLAIM | __GFP_IO | __GFP_HIGH));
 	else
 		sk_allocation = sk->sk_allocation | GFP_KERNEL;
 
@@ -1140,7 +1140,7 @@ static struct sk_buff *linx_alloc_send_skb(struct sock *sk,
 	unsigned int sk_allocation = sk->sk_allocation;
 
 	if (unlikely(in_atomic()))
-		sk->sk_allocation &= (~(__GFP_WAIT | __GFP_IO | __GFP_HIGH));
+		sk->sk_allocation &= (~(__GFP_RECLAIM | __GFP_IO | __GFP_HIGH));
 	else
 		sk->sk_allocation |= GFP_KERNEL;
 

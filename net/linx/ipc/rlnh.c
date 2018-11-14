@@ -472,7 +472,7 @@ LINX_SPID ipc_create_peer(LINX_RLNH rlnh, char *name, uint32_t rlnh_dst_addr)
 
 	/* Create the peer by calling the net subsystem equivalence
 	 * of the socket() function. */
-	err = sock_create_kern(AF_LINX, SOCK_DGRAM, 0, &new_socket);
+	err = sock_create_kern(&init_net, AF_LINX, SOCK_DGRAM, 0, &new_socket);
 	/* SOCKNOSUPPORT and EPROTONOSUPPORT are the consquense of bad
 	 * input parameters. */
 	LINX_ASSERT(err != -ESOCKTNOSUPPORT);
