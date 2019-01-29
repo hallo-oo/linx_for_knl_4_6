@@ -63,6 +63,8 @@
 
 #include <linx_pool.h>
 
+#include <linux/sched/signal.h>
+
 /*
  *  SMP locking strategy:
  *
