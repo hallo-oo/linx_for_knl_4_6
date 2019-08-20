@@ -70,13 +70,13 @@ struct RlnhLinkObj {
         unsigned long next_conn_tmo;
         unsigned int conn_tmo;
         unsigned char disable_heartbeats;
-        atomic_t conn_timer_lock;
-        atomic_t conn_alive_count;
+        refcount_t conn_timer_lock;
+        refcount_t conn_alive_count;
 
-        atomic_t use_count;
+        refcount_t use_count;
         struct list_head node;
 
-        atomic_t disc_count;
+        refcount_t disc_count;
         struct ecm_work *w_disc;
 
         struct ecm_device *ecm_dev;
@@ -120,7 +120,7 @@ struct RlnhLinkObj {
 	struct sk_buff_head tx_queue;
 	uint32_t tx_queue_size;
 	uint32_t tx_next;
-	atomic_t tx_last_ack;
+	refcount_t tx_last_ack;
 	
 	/* tx deferred queue */
 	struct sk_buff_head tx_def_queue;
@@ -129,16 +129,16 @@ struct RlnhLinkObj {
 
 	/* tx timer */
 	struct timer_list tx_timer;
-	atomic_t tx_tmo;
+	refcount_t tx_tmo;
 	int tx_last_timer_ack;
 
 	/* rx timer */
 	struct timer_list rx_timer;
-	atomic_t rx_tmo;
+	refcount_t rx_tmo;
 	int rx_last_queue_start;
 
 	/* fragmentation */
-	atomic_t fragno;
+	refcount_t fragno;
 	struct sk_buff **frag_array;
 	struct sk_buff_head frag_list;
 
@@ -167,7 +167,7 @@ struct RlnhLinkObj {
 #define ECM_CONN_ALIVE_RESET_VALUE (ECM_ACKR_PER_TMO + 1)
 static inline void ecm_mark_conn_alive(struct RlnhLinkObj *co)
 {
-        atomic_set(&co->conn_alive_count, ECM_CONN_ALIVE_RESET_VALUE);
+        refcount_set(&co->conn_alive_count, ECM_CONN_ALIVE_RESET_VALUE);
 }
 
 #ifdef ECM_COMPAT

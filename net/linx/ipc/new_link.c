@@ -35,7 +35,7 @@
 #include <ipc/new_link.h>
 #include <linx_trace.h>
 
-extern atomic_t linx_no_of_queued_signals;
+extern refcount_t linx_no_of_queued_signals;
 
 #ifndef DEFINE_SPINLOCK
 #define DEFINE_SPINLOCK(x)	spinlock_t x = SPIN_LOCK_UNLOCKED
@@ -164,7 +164,7 @@ int linx_request_new_link(struct sock *sk, uint32_t token, uint32_t *ref)
 		}
 		
 		/* Link the linkname + attribute string to the signal */
-		atomic_inc(&link_e->skb->users);
+		refcount_inc(&link_e->skb->users);
 		skb_shinfo(skb)->frag_list = link_e->skb;
 
 		rv = __linx_do_sendmsg_skb_to_local_sk(
@@ -230,7 +230,7 @@ int linx_cancel_new_link(struct sock *sk, uint32_t ref)
 		spin_lock_bh(&sk->sk_receive_queue.lock);
 		if(req->skb->next != NULL && req->skb->prev != NULL) {
 			__skb_unlink_compat(req->skb, sk);
-			atomic_dec(&linx_no_of_queued_signals);
+			refcount_dec(&linx_no_of_queued_signals);
 		}
 		spin_unlock_bh(&sk->sk_receive_queue.lock);
 		
@@ -325,7 +325,7 @@ int linx_add_new_link(struct sock *sk, const char *hunt_p, const char *attr)
 		}		
 		
 		/* Link the linkname + attribute string to the signal */
-		atomic_inc(&link_e->skb->users);
+		refcount_inc(&link_e->skb->users);
 		skb_shinfo(req->skb)->frag_list = link_e->skb;
 
 		rv = __linx_do_sendmsg_skb_to_local_sk(
@@ -415,7 +415,7 @@ void linx_remove_new_link_request(uint32_t ref)
 		spin_lock_bh(&req->skb->sk->sk_receive_queue.lock);
 		if(req->skb->next != NULL && req->skb->prev != NULL) {
 			__skb_unlink_compat(req->skb, req->skb->sk);
-			atomic_dec(&linx_no_of_queued_signals);
+			refcount_dec(&linx_no_of_queued_signals);
 		}
 		spin_unlock_bh(&req->skb->sk->sk_receive_queue.lock);
 
@@ -458,7 +458,7 @@ again:
 		spin_lock_bh(&req->skb->sk->sk_receive_queue.lock);
 		if(req->skb->next != NULL && req->skb->prev != NULL) {
 			__skb_unlink_compat(req->skb, req->skb->sk);
-			atomic_dec(&linx_no_of_queued_signals);
+			refcount_dec(&linx_no_of_queued_signals);
 		}
 		spin_unlock_bh(&req->skb->sk->sk_receive_queue.lock);
 		

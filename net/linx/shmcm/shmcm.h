@@ -79,12 +79,12 @@ struct shmcm_tx {
         unsigned int mtu;
         unsigned int nslot;
         struct mb *mb;
-        atomic_t msgid;
-        atomic_t dc_transmit_ok;
+        refcount_t msgid;
+        refcount_t dc_transmit_ok;
         struct shmcm_lock dc_transmit_lock;
 	
 	struct list_head defq;
-	atomic_t defq_size;
+	refcount_t defq_size;
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,16))
 	struct semaphore defq_lock;
 #else
@@ -103,10 +103,10 @@ struct RlnhLinkObj {
         unsigned int peer_cno;
         unsigned int con_attempts;
         struct timer_list con_timer;
-        atomic_t con_timer_lock;
+        refcount_t con_timer_lock;
         unsigned long con_tmo;
-        atomic_t alive_count;
-        atomic_t use_count;
+        refcount_t alive_count;
+        refcount_t use_count;
 
         struct shmcm_rx rx;
         struct shmcm_tx tx;
@@ -122,8 +122,8 @@ extern unsigned int shmcm_defq_max_size;
 /* Special CON packet transmit shmcm_disconnect cause. */
 #define EXMITCPKT(pkt, eno) (0x06660000 | ((pkt) << 8) | ((eno) & 0xff))
 
-#define shmcm_peer_dead(co) atomic_dec_and_test(&(co)->alive_count)
-#define shmcm_peer_alive(co) atomic_set(&(co)->alive_count, ALIVE_RESET_VALUE)
+#define shmcm_peer_dead(co) refcount_dec_and_test(&(co)->alive_count)
+#define shmcm_peer_alive(co) refcount_set(&(co)->alive_count, ALIVE_RESET_VALUE)
 
 extern void shmcm_get_con(struct RlnhLinkObj *co);
 extern void shmcm_put_con(struct RlnhLinkObj *co);

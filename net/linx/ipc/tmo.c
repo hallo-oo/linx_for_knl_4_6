@@ -62,8 +62,8 @@
 /* A lock that allow exclusive access to the pending tmo lists. */
 DEFINE_SPINLOCK(pend_tmo_lock);
 
-extern atomic_t linx_no_of_pend_tmo;
-extern atomic_t linx_no_of_queued_signals;
+extern refcount_t linx_no_of_pend_tmo;
+extern refcount_t linx_no_of_queued_signals;
 
 #define MAGIC_PEND_TMO 0xAC3FFAC3
 
@@ -192,7 +192,7 @@ static struct sk_buff *__release_tmoref(struct pend_tmo *pt)
 	/* Check if the tmo signal was sent to the timeouter, if so
 	 * unlink it from the timeouters queue. */
 	if ((skb->next != NULL) && (skb->prev != NULL)) {
-		atomic_dec(&linx_no_of_queued_signals);
+		refcount_dec(&linx_no_of_queued_signals);
 		__skb_unlink_compat(skb, skb->sk);
 	}
 	spin_unlock_bh(&skb->sk->sk_receive_queue.lock);
@@ -216,7 +216,7 @@ static inline struct sk_buff *__linx_free_pend_tmo(LINX_OSTMOREF tmoref)
 
 	list_del(&pt->timeouts);
 	skb = __release_tmoref(pt);
-	atomic_dec(&linx_no_of_pend_tmo);
+	refcount_dec(&linx_no_of_pend_tmo);
 
 	return skb;
 }
@@ -236,7 +236,7 @@ void linx_free_pend_tmo(LINX_OSTMOREF tmoref)
 	spin_lock_bh(&pend_tmo_lock);
 	list_del(&pt->timeouts);
 	skb = __release_tmoref(pt);
-	atomic_dec(&linx_no_of_pend_tmo);
+	refcount_dec(&linx_no_of_pend_tmo);
 	spin_unlock_bh(&pend_tmo_lock);
 	if (is_pool_signal(skb->data)) {
 		free_mem(skb->data, skb->sk);
@@ -261,7 +261,7 @@ void linx_free_pend_tmo_cb(LINX_OSTMOREF tmoref)
 	spin_lock_bh(&pend_tmo_lock);
 	list_del(&pt->timeouts);
 	skb = __release_tmoref(pt);
-	atomic_dec(&linx_no_of_pend_tmo);
+	refcount_dec(&linx_no_of_pend_tmo);
 	spin_unlock_bh(&pend_tmo_lock);
 
 	kfree_skb(skb);
@@ -374,7 +374,7 @@ static inline int __allocate_tmoref(struct pend_tmo *pt)
 
 	pte->pt = pt;
 	pt->index = LINX_OSTMOREF_INDEX(pte->tmoref);
-	atomic_inc(&linx_no_of_pend_tmo);
+	refcount_inc(&linx_no_of_pend_tmo);
 
 	return pte->tmoref;
 }
@@ -571,7 +571,7 @@ int linx_modify_tmo(struct sock *sk, LINX_OSTIME tmo, LINX_OSTMOREF tmoref)
 	/* If the tmo has already fired, don't destroy a fired timeout,
 	 * just remove it from the receive queue and reset the clock. */
 	if ((skb->next != NULL) && (skb->prev != NULL)) {
-		atomic_dec(&linx_no_of_queued_signals);
+		refcount_dec(&linx_no_of_queued_signals);
 		__skb_unlink_compat(skb, skb->sk);
                 /*
 		 * __linx_do_sendmsg_skb_to_local_sk()...
@@ -707,7 +707,7 @@ linx_info_pend_tmo_payload(struct sock *sk,
 			    isig_payload->buffer_size : isig->size;
 			/* bump users count to prevent freeing after
 			 * releasing spinlock */
-			atomic_inc(&pt->skb->users);
+			refcount_inc(&pt->skb->users);
 			to.iov_base = isig_payload->buffer;
 			to.iov_len = size;
 			spin_unlock_bh(&pend_tmo_lock);

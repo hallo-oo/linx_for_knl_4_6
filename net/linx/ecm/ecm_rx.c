@@ -503,7 +503,7 @@ static void rx_tmo(unsigned long arg)
 	struct RlnhLinkObj *co;
 
 	co = (struct RlnhLinkObj *)arg;
-	atomic_set(&co->rx_tmo, 1);
+	refcount_set(&co->rx_tmo, 1);
 	schedule_rx_tasklet(co);
 	mod_timer(&co->rx_timer, jiffies + msecs_to_jiffies(RX_TIMER));
 }
@@ -530,7 +530,7 @@ int ecm_start_rx(struct RlnhLinkObj *co)
 		return -ENOMEM;
 	}
 
-	atomic_set(&co->rx_tmo, 0);
+	refcount_set(&co->rx_tmo, 0);
 	setup_timer(&co->rx_timer, rx_tmo, (unsigned long)co);
 	tasklet_init(&co->rx, rx_tasklet, (unsigned long)co);
 	mod_timer(&co->rx_timer, jiffies + msecs_to_jiffies(RX_TIMER));

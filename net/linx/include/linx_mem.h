@@ -54,11 +54,11 @@ struct linx_vmalloc_data {
 };
 #endif
 
-extern atomic_t linx_total_kmallocs;
-extern atomic_t linx_total_kfrees;
+extern refcount_t linx_total_kmallocs;
+extern refcount_t linx_total_kfrees;
 
-extern atomic_t linx_total_vmallocs;
-extern atomic_t linx_total_vfrees;
+extern refcount_t linx_total_vmallocs;
+extern refcount_t linx_total_vfrees;
 
 #ifdef ERRORCHECKS_MEM
 #define LINX_INTERNAL_KCHECK(a, b, c) linx_kcheck(a, b, c)
@@ -114,7 +114,7 @@ do_linx_kmalloc(size_t size, const char *fl, int ln)
 #endif
 
 	if (p != NULL)
-		atomic_inc(&linx_total_kmallocs);
+		refcount_inc(&linx_total_kmallocs);
 
 	return p;
 }
@@ -133,7 +133,7 @@ do_linx_kfree(void *ptr)
 do_linx_kfree(void *ptr, const char *fl, int ln)
 #endif
 {
-	atomic_inc(&linx_total_kfrees);
+	refcount_inc(&linx_total_kfrees);
 #ifdef ERRORCHECKS_MEM
 	linx_kfree_errorchecks(ptr, fl, ln);
 #else
@@ -167,7 +167,7 @@ do_linx_vmalloc(size_t size, const char *fl, int ln)
 #endif
 
 	if (p != NULL)
-		atomic_inc(&linx_total_vmallocs);
+		refcount_inc(&linx_total_vmallocs);
 
 	return p;
 }
@@ -186,7 +186,7 @@ do_linx_vfree(void *ptr)
 do_linx_vfree(void *ptr, const char *fl, int ln)
 #endif
 {
-	atomic_inc(&linx_total_vfrees);
+	refcount_inc(&linx_total_vfrees);
 #ifdef ERRORCHECKS_MEM
 	linx_vfree_errorchecks(ptr, fl, ln);
 #else

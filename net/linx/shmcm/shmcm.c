@@ -263,7 +263,7 @@ static struct RlnhLinkObj *alloc_shmcm_con(struct shmcm_ioctl_create *p)
         if (co->con_name == NULL)
                 goto out;
 
-        atomic_set(&co->use_count, 1);
+        refcount_set(&co->use_count, 1);
 
         return co;
   out:
@@ -281,7 +281,7 @@ static int init_shmcm_con(struct RlnhLinkObj *co, struct shmcm_ioctl_create *p)
         co->con_tmo = (unsigned long)max(100U / ALIVES_PER_TMO,
                                          p->con_tmo / ALIVES_PER_TMO);
         setup_timer(&co->con_timer, con_tmo_func, (unsigned long)co);
-        atomic_set(&co->alive_count, 0);
+        refcount_set(&co->alive_count, 0);
 
         co->mailbox = p->mbox;
         /*
@@ -468,7 +468,7 @@ static void handle_con_tmo(struct RlnhLinkObj *co)
         }
 
         /* Make sure that the timer isn't restarted after a del_timer_sync(). */
-        if (atomic_read(&co->con_timer_lock) != 0)
+        if (refcount_read(&co->con_timer_lock) != 0)
                 mod_timer(&co->con_timer, tmo_ms(co->con_tmo));
 }
 
@@ -493,7 +493,7 @@ static void handle_shmcm_work_create(struct shmcm_work *w)
                 p->co = NULL;
                 goto out;
         }
-        atomic_set(&co->con_timer_lock, 1);
+        refcount_set(&co->con_timer_lock, 1);
         mod_timer(&co->con_timer, tmo_ms(co->con_tmo));
         status = 0; /* Note: wakeup_shmcm_work requires that status is <= 0. */
         p->co = co;
@@ -510,7 +510,7 @@ static void handle_shmcm_work_destroy(struct shmcm_work *w)
          * We must stop users from submitting any more jobs for this
          * connection.
          */
-        atomic_set(&p->co->con_timer_lock, 0);
+        refcount_set(&p->co->con_timer_lock, 0);
         del_timer_sync(&p->co->con_timer);
         shmcm_cleanup_rx(p->co);
         shmcm_cleanup_tx(p->co);
@@ -756,12 +756,12 @@ void shmcm_deliver_con_pkt(struct RlnhLinkObj *co, struct sk_buff *skb)
 
 void shmcm_get_con(struct RlnhLinkObj *co)
 {
-        atomic_inc(&co->use_count);
+        refcount_inc(&co->use_count);
 }
 
 void shmcm_put_con(struct RlnhLinkObj *co)
 {
-        if (atomic_dec_return(&co->use_count) == 0)
+        if (refcount_dec_return(&co->use_count) == 0)
                 free_shmcm_con(co);
 }
 
@@ -822,7 +822,7 @@ static int get_alive_count(const void *cookie, void **cnt)
                 return -ENOMEM;
 
         co = (struct RlnhLinkObj *)cookie;
-        *p = (int)atomic_read(&co->alive_count);
+        *p = (int)refcount_read(&co->alive_count);
         *cnt = p;
 
         return (DB_TMP | DB_INT);
@@ -838,7 +838,7 @@ static int get_defq_size(const void *cookie, void **size)
                 return -ENOMEM;
     
 	co = (struct RlnhLinkObj *)cookie;
-	*p = (int)atomic_read(&co->tx.defq_size);
+	*p = (int)refcount_read(&co->tx.defq_size);
 	*size = p;
 
 	return (DB_TMP | DB_INT);

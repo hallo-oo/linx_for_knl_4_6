@@ -46,8 +46,8 @@
 #include <buf_types.h>
 #include <linx_pool.h>
 
-extern atomic_t linx_no_of_local_sockets;
-extern atomic_t linx_no_of_remote_sockets;
+extern refcount_t linx_no_of_local_sockets;
+extern refcount_t linx_no_of_remote_sockets;
 
 extern struct workqueue_struct *linx_workqueue;
 
@@ -488,8 +488,8 @@ LINX_SPID ipc_create_peer(LINX_RLNH rlnh, char *name, uint32_t rlnh_dst_addr)
 
 	/* Set to socket to remote type. */
 	LINX_ASSERT(linx_sk(sk)->type == LINX_TYPE_LOCAL);
-	atomic_dec(&linx_no_of_local_sockets);
-	atomic_inc(&linx_no_of_remote_sockets);
+	refcount_dec(&linx_no_of_local_sockets);
+	refcount_inc(&linx_no_of_remote_sockets);
 	linx_sk(sk)->type = LINX_TYPE_REMOTE;
 	linx_sk(sk)->rlnh = rlnh;
 
@@ -507,7 +507,7 @@ LINX_SPID ipc_create_peer(LINX_RLNH rlnh, char *name, uint32_t rlnh_dst_addr)
 
 	/* Make sure the socket is held twice, since the release
 	 * functionality of the net subsystem requires that. */
-	LINX_ASSERT(atomic_read(&sk->sk_refcnt) == 2);
+	LINX_ASSERT(refcount_read(&sk->sk_refcnt) == 2);
 
 	linx_sk(sk)->rlnh_dst_addr = rlnh_dst_addr;
 

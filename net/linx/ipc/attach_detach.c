@@ -55,8 +55,8 @@
         ((attref) & (LINX_OSATTREF_INSTANCE_MASK))
 #define LINX_OSATTREF_INSTANCE_INC(attref) ((attref) + (linx_max_attrefs))
 
-extern atomic_t linx_no_of_pend_attach;
-extern atomic_t linx_no_of_queued_signals;
+extern refcount_t linx_no_of_pend_attach;
+extern refcount_t linx_no_of_queued_signals;
 
 spinlock_t pend_attach_lock;
 
@@ -226,7 +226,7 @@ static struct sk_buff *__free_pend_attach(struct pend_attach *pa)
 		skb = pa->skb;
 		pa->skb = NULL;
 
-		atomic_dec(&linx_no_of_queued_signals);
+		refcount_dec(&linx_no_of_queued_signals);
 
 		/* The attach signal was sent to the attacher. */
 		LINX_ASSERT(skb->sk != NULL);
@@ -259,7 +259,7 @@ static inline struct sk_buff *__linx_free_pend_attach(LINX_OSATTREF attref)
 		return NULL;
 	__unlink_pend_attach(pa);
 	skb = __free_pend_attach(pa);
-	atomic_dec(&linx_no_of_pend_attach);
+	refcount_dec(&linx_no_of_pend_attach);
 
 	return skb;
 }
@@ -493,7 +493,7 @@ static inline
 		hlist_add_head(&pa->node_victim,
 			       &linx_sk(victim_sk)->attach_victims);
 	}
-	atomic_inc(&linx_no_of_pend_attach);
+	refcount_inc(&linx_no_of_pend_attach);
 }
 
 /* Allocate an initialize a pending attach structure. */
@@ -927,7 +927,7 @@ int linx_info_pend_attach_payload(struct sock *sk,
 				isig_payload->buffer_size : isig->size;
 			/* bump users count to prevent freeing after
 			 * releasing spinlock */
-			atomic_inc(&pa->skb->users);
+			refcount_inc(&pa->skb->users);
 			to.iov_base = isig_payload->buffer;
 			to.iov_len = size;
 			spin_unlock_bh(&pend_attach_lock);

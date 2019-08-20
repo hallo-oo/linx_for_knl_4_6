@@ -521,19 +521,19 @@ static void send_ecm_conn_pkt(struct RlnhLinkObj *co, int type)
 
 static int ecm_conn_dead(struct RlnhLinkObj *co)
 {
-        return atomic_dec_and_test(&co->conn_alive_count);
+        return refcount_dec_and_test(&co->conn_alive_count);
 }
 
 static void ecm_disable_conn_timer(struct RlnhLinkObj *co)
 {
-        atomic_set(&co->conn_timer_lock, 0);
+        refcount_set(&co->conn_timer_lock, 0);
         del_timer_sync(&co->conn_timer);
         ecm_mark_conn_alive(co);
 }
 
 static void ecm_enable_conn_timer(struct RlnhLinkObj *co)
 {
-        atomic_set(&co->conn_timer_lock, 1);
+        refcount_set(&co->conn_timer_lock, 1);
         co->next_conn_tmo = tmo_ms_rand(co->conn_tmo);
         mod_timer(&co->conn_timer, co->next_conn_tmo);
 }
@@ -626,7 +626,7 @@ static void handle_conn_tmo(struct RlnhLinkObj *co)
         }
 
         /* Make sure that the timer isn't restarted after a del_timer_sync(). */
-        if (atomic_read(&co->conn_timer_lock) != 0)
+        if (refcount_read(&co->conn_timer_lock) != 0)
                 mod_timer(&co->conn_timer, co->next_conn_tmo);
 }
 
@@ -939,7 +939,7 @@ static struct RlnhLinkObj *alloc_ecm_connection(struct ethcm_ioctl_create *arg)
         co = kzalloc(sizeof(*co), GFP_KERNEL);
         if (co == NULL)
                 return NULL;
-        atomic_set(&co->use_count, 1);
+        refcount_set(&co->use_count, 1);
 
         size = strlen((char *)kptr(arg, arg->name)) + 1;
         co->con_name = kzalloc(size, GFP_KERNEL);
@@ -960,7 +960,7 @@ static struct RlnhLinkObj *alloc_ecm_connection(struct ethcm_ioctl_create *arg)
         co->w_disc = alloc_ecm_work(size, 0, GFP_KERNEL);
         if (co->w_disc == NULL)
                 goto out;
-        atomic_set(&co->disc_count, 1);
+        refcount_set(&co->disc_count, 1);
 
         return co;
   out:
@@ -1020,7 +1020,7 @@ static int init_ecm_connection(struct RlnhLinkObj *co, struct ethcm_ioctl_create
 
         setup_timer(&co->conn_timer, conn_tmo_func, (unsigned long)co);
         co->next_conn_tmo = tmo_ms_rand(co->conn_tmo);
-        atomic_set(&co->conn_alive_count, 0);
+        refcount_set(&co->conn_alive_count, 0);
 
         co->preferred_wsize = (arg->window_size == 0) ?
                 WINDOW_SIZE : arg->window_size;
@@ -1047,7 +1047,7 @@ struct RlnhLinkObj *get_ecm_connection(unsigned int cid, uint8_t *mac,
                 return NULL;
         }
         if (likely(co != NULL)) {
-                atomic_inc(&co->use_count);
+                refcount_inc(&co->use_count);
                 spin_unlock_bh(&ecm_lock);
                 return co;
         }
@@ -1055,7 +1055,7 @@ struct RlnhLinkObj *get_ecm_connection(unsigned int cid, uint8_t *mac,
                 co = list_entry(item, struct RlnhLinkObj, node);
                 if ((memcmp(co->peer_mac, mac, ETH_ALEN) == 0) && 
                     (co->peer_coreid == peer_coreid) ) {
-                        atomic_inc(&co->use_count);
+                        refcount_inc(&co->use_count);
                         spin_unlock_bh(&ecm_lock);
                         return co;
                 }
@@ -1067,7 +1067,7 @@ struct RlnhLinkObj *get_ecm_connection(unsigned int cid, uint8_t *mac,
 void put_ecm_connection(struct RlnhLinkObj *co)
 {
         spin_lock_bh(&ecm_lock);
-        if (unlikely(0 == atomic_dec_return(&co->use_count))) {
+        if (unlikely(0 == refcount_dec_return(&co->use_count))) {
                 spin_unlock_bh(&ecm_lock);
                 free_ecm_connection(co);
                 return;
@@ -1167,7 +1167,7 @@ static void handle_work_destroy(struct ecm_work *w)
          * connection. The cleanup work must be the last job for this
          * connection.
          */
-        atomic_set(&p->co->conn_timer_lock, 0);
+        refcount_set(&p->co->conn_timer_lock, 0);
         del_timer_sync(&p->co->conn_timer);
         synchronize_ecm_lock(&p->co->conn_rx_lock);
         del_ecm_connection(p->co);
@@ -1308,7 +1308,7 @@ static void conn_tmo_func(unsigned long data)
                  * the timer must not be restarted (see handle_work_destroy and
                  * handle_work_cleanup).
                  */
-                if (atomic_read(&co->conn_timer_lock) != 0)
+                if (refcount_read(&co->conn_timer_lock) != 0)
                         mod_timer(&co->conn_timer, co->next_conn_tmo);
                 return;
         }
@@ -1518,7 +1518,7 @@ static void ecm_dc_connect(struct RlnhLinkObj *co)
                 return;
         }
 
-        atomic_set(&co->disc_count, 1); /* Allow one disconnect. */
+        refcount_set(&co->disc_count, 1); /* Allow one disconnect. */
         p = w->data;
         p->co = co;
         queue_work(ecm_workq, &w->work);
@@ -1622,7 +1622,7 @@ static int get_conn_tmo(const void *cookie, void **cnt)
             return -ENOMEM;
 
     co = (struct RlnhLinkObj *)cookie;
-    *p = (int)atomic_read((atomic_t*)&co->conn_tmo);
+    *p = (int)refcount_read((refcount_t*)&co->conn_tmo);
     *cnt = p;
 
     return (DB_TMP | DB_INT);
@@ -1637,17 +1637,17 @@ static int set_conn_tmo(void *p, void *val)
     	return -EINVAL;
     }
 
-    atomic_set((atomic_t*)&co->conn_tmo, *(int*)val);
+    refcount_set((refcount_t*)&co->conn_tmo, *(int*)val);
 
     if(co->conn_tmo > 0)
     {
-    	atomic_set(&co->conn_timer_lock, 1);
+    	refcount_set(&co->conn_timer_lock, 1);
         co->next_conn_tmo = tmo_ms_rand(co->conn_tmo);
     	mod_timer(&co->conn_timer, co->next_conn_tmo);
     }
     else
     {
-    	atomic_set(&co->conn_timer_lock, 0);
+    	refcount_set(&co->conn_timer_lock, 0);
     	del_timer_sync(&co->conn_timer);
     	ecm_mark_conn_alive(co);
     }

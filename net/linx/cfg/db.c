@@ -47,7 +47,7 @@
 struct tobj_head {
         struct list_head node;
         struct list_head tobj_list;
-        atomic_t refcnt;
+        refcount_t refcnt;
         unsigned int modno;
         const struct db_template *template;
         char name[0];
@@ -55,7 +55,7 @@ struct tobj_head {
 
 struct tobj {
         struct list_head node;
-        atomic_t refcnt;
+        refcount_t refcnt;
         void *item;
         char name[0];
 };
@@ -226,7 +226,7 @@ int db_add_template(const char *name, const struct db_template *template)
         INIT_LIST_HEAD(&p->tobj_list);
         p->template = template;
         p->modno = 0;
-        atomic_set(&p->refcnt, 0);
+        refcount_set(&p->refcnt, 0);
         strcpy(p->name, strv[0]);
         list_add(&p->node, &db_list);
         status = 0;
@@ -261,7 +261,7 @@ int db_del_template(const char *name)
                 status = -ENOENT;
                 goto out_10;
         }
-        if ((atomic_read(&p->refcnt) != 0) || !list_empty(&p->tobj_list)) {
+        if ((refcount_read(&p->refcnt) != 0) || !list_empty(&p->tobj_list)) {
                 status = -EBUSY;
                 goto out_10;
         }
@@ -361,7 +361,7 @@ int db_template_get(const char *name, const struct db_template **template)
                 status = -ENOENT; /* Module has been unloaded! */
                 goto out_10;
         }
-        atomic_inc(&p->refcnt);
+        refcount_inc(&p->refcnt);
         *template = p->template;
         status = 0;
   out_10:
@@ -395,7 +395,7 @@ int db_template_put(const char *name, const struct db_template **template)
                 goto out_10;
         }
         *template = NULL;
-        atomic_dec(&p->refcnt);
+        refcount_dec(&p->refcnt);
         module_put(p->template->owner);
         status = 0;
   out_10:
@@ -440,7 +440,7 @@ int db_add_item(const char *name, void *item)
                 goto out_10;
         }
         tobj->item = item;
-        atomic_set(&tobj->refcnt, 0);
+        refcount_set(&tobj->refcnt, 0);
         strcpy(tobj->name, strv[1]);
         list_add(&tobj->node, &p->tobj_list);
         p->modno++;
@@ -481,7 +481,7 @@ int db_del_item(const char *name, void **item)
                 status = -ENOENT;
                 goto out_10;
         }
-        if (atomic_read(&tobj->refcnt) != 0) {
+        if (refcount_read(&tobj->refcnt) != 0) {
                 status = -EBUSY;
                 goto out_10;
         }
@@ -526,7 +526,7 @@ int db_item_get(const char *name, void **item)
                 status = -ENOENT;
                 goto out_10;
         }
-        atomic_inc(&tobj->refcnt);
+        refcount_inc(&tobj->refcnt);
         *item = tobj->item;
         status = 0;
   out_10:
@@ -570,7 +570,7 @@ int db_item_put(const char *name, void **item)
                 goto out_10;
         }
         *item = NULL;
-        atomic_dec(&tobj->refcnt);
+        refcount_dec(&tobj->refcnt);
         status = 0;
   out_10:
         up(&db_list_sem);
@@ -602,7 +602,7 @@ int db_list_get(const char *name, struct list_head **list)
                 status = -ENOENT;
                 goto out_10;
         }
-        atomic_inc(&p->refcnt);
+        refcount_inc(&p->refcnt);
         *list = &p->tobj_list;
         status = 0;
   out_10:
@@ -635,7 +635,7 @@ int db_list_put(const char *name, struct list_head **list)
                 status = -ENOENT;
                 goto out_10;
         }
-        atomic_dec(&p->refcnt);
+        refcount_dec(&p->refcnt);
         *list = NULL;
         status = 0;
   out_10:

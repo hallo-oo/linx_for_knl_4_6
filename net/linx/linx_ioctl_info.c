@@ -44,24 +44,24 @@
 #include <ipc/tmo.h>
 #include <linx_pool.h>
 
-extern atomic_t linx_no_of_local_sockets;
-extern atomic_t linx_no_of_remote_sockets;
-extern atomic_t linx_no_of_link_sockets;
-extern atomic_t linx_no_of_pend_attach;
-extern atomic_t linx_no_of_pend_hunt;
-extern atomic_t linx_no_of_queued_signals;
-extern atomic_t linx_no_of_pend_tmo;
+extern refcount_t linx_no_of_local_sockets;
+extern refcount_t linx_no_of_remote_sockets;
+extern refcount_t linx_no_of_link_sockets;
+extern refcount_t linx_no_of_pend_attach;
+extern refcount_t linx_no_of_pend_hunt;
+extern refcount_t linx_no_of_queued_signals;
+extern refcount_t linx_no_of_pend_tmo;
 
 int linx_ioctl_info_summary(struct linx_info *info, int compat)
 {
 	struct linx_info_summary sum;
-	sum.no_of_local_sockets = (int)atomic_read(&linx_no_of_local_sockets);
-	sum.no_of_remote_sockets = (int)atomic_read(&linx_no_of_remote_sockets);
-	sum.no_of_link_sockets = (int)atomic_read(&linx_no_of_link_sockets);
-	sum.no_of_pend_attach = (int)atomic_read(&linx_no_of_pend_attach);
-	sum.no_of_pend_hunt = (int)atomic_read(&linx_no_of_pend_hunt);
-	sum.no_of_pend_tmo = (int)atomic_read(&linx_no_of_pend_tmo);
-	sum.no_of_queued_signals = (int)atomic_read(&linx_no_of_queued_signals);
+	sum.no_of_local_sockets = (int)refcount_read(&linx_no_of_local_sockets);
+	sum.no_of_remote_sockets = (int)refcount_read(&linx_no_of_remote_sockets);
+	sum.no_of_link_sockets = (int)refcount_read(&linx_no_of_link_sockets);
+	sum.no_of_pend_attach = (int)refcount_read(&linx_no_of_pend_attach);
+	sum.no_of_pend_hunt = (int)refcount_read(&linx_no_of_pend_hunt);
+	sum.no_of_pend_tmo = (int)refcount_read(&linx_no_of_pend_tmo);
+	sum.no_of_queued_signals = (int)refcount_read(&linx_no_of_queued_signals);
 	if (0 != copy_to_user(info->type_spec, &sum,
 			      sizeof(struct linx_info_summary))) {
 		return -EFAULT;
@@ -880,7 +880,7 @@ int linx_ioctl_info_signal_payload(struct linx_info *info, int compat)
 			to.iov_len = size;
 			/* Increase the users count for this skb to prevent if
 			 * from being freed after releasing the spinlock. */
-			atomic_inc(&skb->users);
+			refcount_inc(&skb->users);
 			spin_unlock_bh(&sk->sk_receive_queue.lock);
 			if (is_pool_signal(skb->data)) {
 				/* pool buffer, use copy to user */

@@ -192,13 +192,13 @@ static int fill_udata(struct sk_buff *skb, unsigned int buf_type, void *buffer,
 }
 
 /* get a new exclusive seqno */
-static inline uint16_t get_exclusive_seqno(atomic_t *seqno)
+static inline uint16_t get_exclusive_seqno(refcount_t *seqno)
 {
 	int new;
 	int last;
 	int old;
 
-	last = atomic_read(seqno);
+	last = refcount_read(seqno);
 	for (;;) {
 		new = (last + 1) & 0xffff;
 		old = atomic_cmpxchg(seqno, last, new);
@@ -267,13 +267,13 @@ static inline void schedule_tx_tasklet(struct RlnhLinkObj *co)
 }
 
 /* get a new exclusive msgid */
-static inline uint8_t get_exclusive_msgid(atomic_t *msgid)
+static inline uint8_t get_exclusive_msgid(refcount_t *msgid)
 {
 	int new;
 	int last;
 	int old;
 
-	last = atomic_read(msgid);
+	last = refcount_read(msgid);
 	for (;;) {
 		new = (last + 1) & 0xff;
 		old = atomic_cmpxchg(msgid, last, new);
@@ -529,8 +529,8 @@ int rio_dc_transmit(struct RlnhLinkObj *co, unsigned int type, unsigned int src,
 void rio_start_tx(struct RlnhLinkObj *co)
 {		
 	skb_queue_head_init(&co->tx_list);
-        atomic_set(&co->tx_seqno, ~0);
-        atomic_set(&co->msgid, 0);
+        refcount_set(&co->tx_seqno, ~0);
+        refcount_set(&co->msgid, 0);
         tasklet_init(&co->tx, tx_tasklet, (unsigned long)co);
 }
 

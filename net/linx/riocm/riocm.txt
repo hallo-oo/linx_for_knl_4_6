@@ -92,11 +92,11 @@ the different jobs. These functions submit jobs to the workqueue.
 All jobs are of type struct rio_work, which also has a job specific part. Jobs
 are normally allocated with alloc_rio_work, which uses kmalloc.
 
-In non-atomic context, kmalloc with GFP_KERNEL is used for "normal" jobs and
+In non-refcount context, kmalloc with GFP_KERNEL is used for "normal" jobs and
 __GFP_REPEAT or __GFP_NOFAIL is added for more important jobs (to make the
 kernel try harder).
 
-In atomic context, kmalloc with GFP_ATOMIC is used for "normal" jobs and
+In refcount context, kmalloc with GFP_ATOMIC is used for "normal" jobs and
 pre-allocated memory is used for important ones.
 
 rio_create/destroy		 GFP_KERNEL
@@ -143,11 +143,11 @@ How to synchronize Rx/Tx with the workqueue:
 --------------------------------------------
 
 Sometimes Rx/Tx code must be synchronized with the workqueue, e.g. during
-a disconnect. Rx/Tx code (or parts of it) runs "in atomic" context and is
+a disconnect. Rx/Tx code (or parts of it) runs "in refcount" context and is
 frequently called. For that reason, the lock should be fast to acquire and
 release. However, a workqueue may sleep, so that side of the lock doesn't need
 to be light weighted. The struct rio_lock is a synchronization mechanism based
-on an atomic variable and a waitqueue. It works like this:
+on an refcount variable and a waitqueue. It works like this:
 
 static void rx(void)
 {
@@ -181,7 +181,7 @@ Let us have a closer look at how this works. First we have the rio_lock data
 type,
 
 struct rio_lock {
-        atomic_t count;
+        refcount_t count;
         wait_queue_head_t waitq;
 };
 
@@ -190,7 +190,7 @@ anyone to get the lock!
 
 static inline int rio_trylock(struct rio_lock *lock)
 {
-        return atomic_positive_inc(&lock->count);
+        return refcount_positive_inc(&lock->count);
 }
 
 If count is greater than 0, rio_trylock will increment count and return
@@ -199,7 +199,7 @@ holding the lock (since count is initialized to 1).
 
 static inline void rio_unlock(struct rio_lock *lock)
 {
-        if (atomic_add_negative(-1, &lock->count))
+        if (refcount_add_negative(-1, &lock->count))
                 wake_up_sync(&lock->waitq);
 }
 
@@ -209,10 +209,10 @@ every rio_unlock).
 
 static inline void synchronize_rio_lock(struct rio_lock *lock)
 {
-        int k = atomic_xchg(&lock->count, 0) - 1;
+        int k = refcount_xchg(&lock->count, 0) - 1;
         if (k <= 0)
                 return;
-        wait_event(lock->waitq, atomic_read(&lock->count) == -k);
+        wait_event(lock->waitq, refcount_read(&lock->count) == -k);
 }
 
 First, count is replaced with 0 and k is assigned the number of users currently
@@ -300,7 +300,7 @@ pointer.
 
 As mentioned above, this data structure is accessed from both receive and
 workqueue context and must be protected. A spinlock, rio_lock, is used since
-receive code can not sleep (atomic context). There is one function to add
+receive code can not sleep (refcount context). There is one function to add
 a connection object, add_rio_connection, and one function, del_rio_connection,
 to remove it. Note that the del_rio_function does not free the connection
 object, it merely unlink it from the data structure, i.e. get_rio_connection

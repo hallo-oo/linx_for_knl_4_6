@@ -166,7 +166,7 @@ static inline void __remove_pend_hunt(struct pend_hunt *ph)
 		/* Unhash the node. */
 		ph->node.pprev = NULL;
 	}
-	atomic_dec(&linx_no_of_pend_hunt);
+	refcount_dec(&linx_no_of_pend_hunt);
 }
 
 /* Lock the pending hunt list and add a new element. */
@@ -174,7 +174,7 @@ static inline void __add_pend_hunt(struct pend_hunt *ph)
 {
 	check_pend_hunt(ph);
 	hlist_add_head(&ph->node, &linx_pend_hunt);
-	atomic_inc(&linx_no_of_pend_hunt);
+	refcount_inc(&linx_no_of_pend_hunt);
 }
 
 /* Lock the pending hunt list and add a new element. */
@@ -611,8 +611,8 @@ int linx_add_hunt_path(const char *hunt_path,
 	write_unlock_bh(&linx_hunt_path_lock);
 
 	LINX_ASSERT(linx_sk(owner_sk)->type == LINX_TYPE_REMOTE);
-	atomic_dec(&linx_no_of_remote_sockets);
-	atomic_inc(&linx_no_of_link_sockets);
+	refcount_dec(&linx_no_of_remote_sockets);
+	refcount_inc(&linx_no_of_link_sockets);
 	linx_sk(owner_sk)->type = LINX_TYPE_LINK;
 
         /*
@@ -623,8 +623,8 @@ int linx_add_hunt_path(const char *hunt_path,
 	err = linx_add_new_link(owner_sk, hunt_path, attr);
 	if(err != 0) {
                 /* Oops! Undo and return error... */
-                atomic_inc(&linx_no_of_remote_sockets);
-                atomic_dec(&linx_no_of_link_sockets);
+                refcount_inc(&linx_no_of_remote_sockets);
+                refcount_dec(&linx_no_of_link_sockets);
                 linx_sk(owner_sk)->type = LINX_TYPE_REMOTE;
 		linx_kfree(hunt_p_new);
 		return err;
@@ -1418,7 +1418,7 @@ int linx_info_pend_hunt_payload(struct sock *sk,
 				isig_payload->buffer_size : isignal->size;
 			/* bump users count to prevent freeing after
 			 * releasing spinlock */
-			atomic_inc(&ph->skb->users);
+			refcount_inc(&ph->skb->users);
 			to.iov_base = isig_payload->buffer;
 			to.iov_len = size;
 			read_unlock_bh(&linx_pend_hunt_lock);

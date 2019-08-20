@@ -66,7 +66,7 @@ void defq_purge(struct RlnhLinkObj *co)
 	struct list_head *tmp;
 
 	list_for_each_safe(pos, tmp, &co->tx.defq) {
-		atomic_dec(&co->tx.defq_size);
+		refcount_dec(&co->tx.defq_size);
 		list_del(pos);
 		kfree(pos);
 	}
@@ -113,13 +113,13 @@ static int defq_tail(struct RlnhLinkObj *co, struct mb_vec *vec, size_t count)
 
 	defq_lock(&co->tx.defq_lock);
 
-	if (atomic_read(&co->tx.defq_size) >= shmcm_defq_max_size) {
+	if (refcount_read(&co->tx.defq_size) >= shmcm_defq_max_size) {
 		defq_unlock(&co->tx.defq_lock);
 		kfree(dq_elem);
 		return -ENOSPC;
 	}
 
-	atomic_inc(&co->tx.defq_size);
+	refcount_inc(&co->tx.defq_size);
 	list_add_tail(&dq_elem->node, &co->tx.defq);
 	defq_unlock(&co->tx.defq_lock);
 	return 0;
@@ -142,7 +142,7 @@ static int defq_flush(struct RlnhLinkObj *co)
 		err = mb_xmit_vec(co->tx.mb, vec, 1);
 		if (err < 0)
 			break;
-		atomic_dec(&co->tx.defq_size);
+		refcount_dec(&co->tx.defq_size);
 		list_del(&dq_elem->node);
 		kfree(dq_elem);
 	}
@@ -156,7 +156,7 @@ static int xmit_vec(struct RlnhLinkObj *co, struct mb_vec *vec, size_t count)
 {
 	int err = 0;
 
-	if (atomic_read(&co->tx.defq_size) != 0) {
+	if (refcount_read(&co->tx.defq_size) != 0) {
 		err = defq_flush(co);
 		if (err == -ENOSPC)
 			return defq_tail(co, vec, count);
@@ -227,7 +227,7 @@ static int send_udata_pkt(struct RlnhLinkObj *co, uint32_t type, uint32_t src,
 
         fragsz = co->tx.mtu - sizeof(hdr);
         nfrag = (size + (fragsz - 1)) / fragsz;
-        msgid = atomic_add_return(1, &co->tx.msgid) & 0xffff;
+        msgid = refcount_add_return(1, &co->tx.msgid) & 0xffff;
 
         hdr.mhdr.type = htonl(UDATA_1_PKT);
         hdr.mhdr.size = htonl(co->tx.mtu);
@@ -245,7 +245,7 @@ static int send_udata_pkt(struct RlnhLinkObj *co, uint32_t type, uint32_t src,
                 status = xmit_udata_pkt(co, &hdr, sizeof(hdr), udata, fragsz,
                                         type);
                 if (status != 0) {
-                        atomic_set(&co->tx.dc_transmit_ok, 0);
+                        refcount_set(&co->tx.dc_transmit_ok, 0);
                         shmcm_disconnect(co, status, SHMCM_TX);
                         return status;
                 }
@@ -258,7 +258,7 @@ static int send_udata_pkt(struct RlnhLinkObj *co, uint32_t type, uint32_t src,
         hdr.mhdr.size = htonl(sizeof(hdr) + size);
         status = xmit_udata_pkt(co, &hdr, sizeof(hdr), udata, size, type);
         if (status != 0) {
-                atomic_set(&co->tx.dc_transmit_ok, 0);
+                refcount_set(&co->tx.dc_transmit_ok, 0);
                 shmcm_disconnect(co, status, SHMCM_TX);
                 return status;
         }
@@ -296,7 +296,7 @@ int shmcm_dc_transmit(struct RlnhLinkObj *co, uint32_t type, uint32_t src,
          *   knows that no one can run dc_transmit and there is no one left
          *   inside dc_transmit.
          */
-        if (atomic_read(&co->tx.dc_transmit_ok) == 0)
+        if (refcount_read(&co->tx.dc_transmit_ok) == 0)
                 return 0; /* Silently drop signal, disconnect in progress. */
         if (shmcm_trylock(&co->tx.dc_transmit_lock) == 0)
                 return 0; /* Silently drop signal, disconnect in progress. */
@@ -310,13 +310,13 @@ int shmcm_dc_transmit(struct RlnhLinkObj *co, uint32_t type, uint32_t src,
 
 void shmcm_enable_dc_transmit(struct RlnhLinkObj *co)
 {
-        atomic_set(&co->tx.dc_transmit_ok, 1);
+        refcount_set(&co->tx.dc_transmit_ok, 1);
         reset_shmcm_lock(&co->tx.dc_transmit_lock, 1);
 }
 
 void shmcm_disable_dc_transmit(struct RlnhLinkObj *co)
 {
-	atomic_set(&co->tx.dc_transmit_ok, 0);
+	refcount_set(&co->tx.dc_transmit_ok, 0);
         synchronize_shmcm_lock(&co->tx.dc_transmit_lock);
 	defq_purge(co);
 }
@@ -333,7 +333,7 @@ int shmcm_init_tx(struct RlnhLinkObj *co, unsigned int nslot, unsigned int mtu)
                 return -EINVAL;
         }
 	INIT_LIST_HEAD(&co->tx.defq);
-	atomic_set(&co->tx.defq_size, 0);
+	refcount_set(&co->tx.defq_size, 0);
 	defq_lock_init(&co->tx.defq_lock);
         return 0;
 }

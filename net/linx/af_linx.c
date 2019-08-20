@@ -97,19 +97,19 @@ static struct kmem_cache *linx_sk_cachep;
 #endif
 
 /* The no of created sockets counter. */
-static atomic_t linx_nr_socks = ATOMIC_INIT(0);
+static refcount_t linx_nr_socks = ATOMIC_INIT(0);
 
 /* A signal filter that match all signals. */
 static const LINX_SIGSELECT linx_sel_all[] = { 0 };
 
 /* Variables used for statistics in the info interface. */
-atomic_t linx_no_of_local_sockets = ATOMIC_INIT(0);
-atomic_t linx_no_of_remote_sockets = ATOMIC_INIT(0);
-atomic_t linx_no_of_link_sockets = ATOMIC_INIT(0);
-atomic_t linx_no_of_pend_attach = ATOMIC_INIT(0);
-atomic_t linx_no_of_pend_hunt = ATOMIC_INIT(0);
-atomic_t linx_no_of_queued_signals = ATOMIC_INIT(0);
-atomic_t linx_no_of_pend_tmo = ATOMIC_INIT(0);
+refcount_t linx_no_of_local_sockets = ATOMIC_INIT(0);
+refcount_t linx_no_of_remote_sockets = ATOMIC_INIT(0);
+refcount_t linx_no_of_link_sockets = ATOMIC_INIT(0);
+refcount_t linx_no_of_pend_attach = ATOMIC_INIT(0);
+refcount_t linx_no_of_pend_hunt = ATOMIC_INIT(0);
+refcount_t linx_no_of_queued_signals = ATOMIC_INIT(0);
+refcount_t linx_no_of_pend_tmo = ATOMIC_INIT(0);
 
 #define LINX_SPID_INDEX_MASK	       (linx_max_spids-1)
 #define LINX_SPID_SHIFT_INSTANCE(i)    \
@@ -173,7 +173,7 @@ static int linx_sk_trylock(struct sock *sk)
 
 static void linx_sk_unlock(struct sock *sk)
 {
-	/* atomic_xchg is "safer" then atomic_dec or atomic_set
+	/* atomic_xchg is "safer" then refcount_dec or refcount_set
 	 * since it implies memory barriers */
 	(void)atomic_xchg(&linx_sk(sk)->in_use, 0);
 }
@@ -595,7 +595,7 @@ void linx_skb_queue_purge(struct sock *sk, struct sk_buff_head *list)
 			}
 			cb->destructor(cb->ref);
 		} else {
-			atomic_dec(&linx_no_of_queued_signals);
+			refcount_dec(&linx_no_of_queued_signals);
 			if (is_pool_signal(skb->data)) {
 				free_mem(skb->data, sk);
 				skb->data = NULL;
@@ -852,7 +852,7 @@ static void linx_sock_destructor(struct sock *sk)
 	linx_skb_queue_purge(sk, &sk->sk_receive_queue);
 
 	/* Error checks. */
-	LINX_ASSERT(!atomic_read(&sk->sk_wmem_alloc));
+	LINX_ASSERT(!refcount_read(&sk->sk_wmem_alloc));
 	LINX_ASSERT(sk_unhashed(sk));
 	LINX_ASSERT(!sk->sk_socket);
 
@@ -882,7 +882,7 @@ static void linx_sock_destructor(struct sock *sk)
 	linx_sk_unlock(sk);
 
 	/* Decrease the global linx socket counter. */
-	atomic_dec(&linx_nr_socks);
+	refcount_dec(&linx_nr_socks);
 
 }
 
@@ -928,11 +928,11 @@ static int linx_release(struct socket *sock)
 	linx_remove_new_link_requests(sk);
 
 	if (linx_sk(sk)->type == LINX_TYPE_LOCAL)
-		atomic_dec(&linx_no_of_local_sockets);
+		refcount_dec(&linx_no_of_local_sockets);
 	else if (linx_sk(sk)->type == LINX_TYPE_LINK)
-		atomic_dec(&linx_no_of_link_sockets);
+		refcount_dec(&linx_no_of_link_sockets);
 	else			/* if(linx_sk(sk)->type == LINX_TYPE_REMOTE) */
-		atomic_dec(&linx_no_of_remote_sockets);
+		refcount_dec(&linx_no_of_remote_sockets);
 
 	write_lock_bh(&spid_lock);
 
@@ -994,7 +994,7 @@ static struct sk_buff *linx_alloc_send_pskb(struct sock *sk,
 		if (unlikely(sk->sk_shutdown & SEND_SHUTDOWN))
 			goto failure;
 
-		if (likely(atomic_read(&sk->sk_wmem_alloc) < sk->sk_sndbuf)) {
+		if (likely(refcount_read(&sk->sk_wmem_alloc) < sk->sk_sndbuf)) {
 			skb = alloc_skb(0, sk_allocation);
 			if (skb) {
 				int npages;
@@ -1376,7 +1376,7 @@ linx_do_legacy_sendmsg(struct sock *sk,
         /* This implementation of sendmsg do not support send timeouts. Set
          * using setsockopt(SO_SNDTIMEO). */
 
-        atomic_inc(&linx_no_of_queued_signals);
+        refcount_inc(&linx_no_of_queued_signals);
 
         if (unlikely(BUF_TYPE_OOB(buffer_type))) {
                 /* Mark as OOB. Put before in-band sigs, but after OOB sigs */
@@ -1558,7 +1558,7 @@ linx_do_sendmsg(struct sock *sk,
 	/* This implementation of sendmsg do not support send timeouts. Set
 	 * using setsockopt(SO_SNDTIMEO). */
 
-	atomic_inc(&linx_no_of_queued_signals);
+	refcount_inc(&linx_no_of_queued_signals);
 
 	if (unlikely(BUF_TYPE_OOB(buffer_type))) {
 		/* Mark as OOB. Put before in-band sigs, but after OOB sigs */
@@ -1641,7 +1641,7 @@ int __linx_do_sendmsg_skb_to_local_sk(struct sock *to, struct sk_buff *skb,
 	else
 		cb->pass_ptr = 0;
 
-	atomic_inc(&linx_no_of_queued_signals);
+	refcount_inc(&linx_no_of_queued_signals);
 
 	/* Put the signal at the end of the receivers queue. */
 	skb_queue_tail(&to->sk_receive_queue, skb);
@@ -2068,7 +2068,7 @@ static int linx_ioctl_legacy_receive(struct sock *sk, unsigned long arg)
                 spin_unlock_bh(&sk->sk_receive_queue.lock);
 
                 kfree_skb(skb);
-                atomic_dec(&linx_no_of_queued_signals);
+                refcount_dec(&linx_no_of_queued_signals);
         }
 
         if (unlikely(sigselect_size != 0 || from_spid != LINX_ILLEGAL_SPID))
@@ -2340,7 +2340,7 @@ static int linx_ioctl_legacy_2_receive(struct sock *sk, unsigned long arg)
 		spin_unlock_bh(&sk->sk_receive_queue.lock);
 
 		kfree_skb(skb);
-		atomic_dec(&linx_no_of_queued_signals);
+		refcount_dec(&linx_no_of_queued_signals);
 	}
 
 	if (unlikely(sigselect_size != 0 || from_spid != LINX_ILLEGAL_SPID))
@@ -2646,7 +2646,7 @@ static int linx_ioctl_receive(struct sock *sk, unsigned long arg)
 		spin_unlock_bh(&sk->sk_receive_queue.lock);
 
 		kfree_skb(skb);
-		atomic_dec(&linx_no_of_queued_signals);
+		refcount_dec(&linx_no_of_queued_signals);
 	}
 
 	if (unlikely(sigselect_size != 0 || from_spid != LINX_ILLEGAL_SPID))
@@ -2868,7 +2868,7 @@ static int linx_recvmsg(struct socket *sock, struct msghdr *msg, size_t size, in
 		/* Free the received datagram kernel resources. */
 		skb_free_datagram(sk, skb);
 
-		atomic_dec(&linx_no_of_queued_signals);
+		refcount_dec(&linx_no_of_queued_signals);
 	}
 
       out:
@@ -4026,7 +4026,7 @@ static int linx_create(struct net *net, struct socket *sock, int protocol,
 	}
 
 	/* Increase the number of sockets created. */
-	atomic_inc(&linx_nr_socks);
+	refcount_inc(&linx_nr_socks);
 
 	/* Initialize the nozero default sock structure data. */
 	sock_init_data(sock, sk);
@@ -4071,7 +4071,7 @@ static int linx_create(struct net *net, struct socket *sock, int protocol,
 	spin_lock_init(&linx_sk(sk)->skb_alloc_lock);
 
 	/* Only allow exclusive access to the socket. */
-	atomic_set(&linx_sk(sk)->in_use, 0);
+	refcount_set(&linx_sk(sk)->in_use, 0);
 
 	/* Store the pid of the creator for trace purposes. */
 	linx_sk(sk)->owner_pid = current->pid;
@@ -4080,7 +4080,7 @@ static int linx_create(struct net *net, struct socket *sock, int protocol,
 	/* Store the unbound socket in the unbound socket list. */
 	linx_store_unbound(sk);
 
-	atomic_inc(&linx_no_of_local_sockets);
+	refcount_inc(&linx_no_of_local_sockets);
 
 	sk->sk_sndbuf = LINX_MAX_INT;
 	sk->sk_rcvbuf = LINX_MAX_INT;

@@ -325,7 +325,7 @@ Tx Data Path
 There are two transmit functions, shmcm_dc_transmit and shmcm_send_con_pkt.
 First, shmcm_send_con_pkt is used to send CM protocol messages to the peer
 and it's only called from the workqueue. Then there is the shmcm_transmit_dc
-that is used to transmit user data. It is only called from non-atomic context.
+that is used to transmit user data. It is only called from non-refcount context.
 
 Synchronization with the Workqueue:
 -----------------------------------
@@ -350,11 +350,11 @@ Some words about synchronization and the so-called shmcm locks
 
 
 Sometimes Rx/Tx code must be synchronized with the workqueue, e.g. during
-a disconnect. Rx/Tx code (or parts of it) runs "in atomic" context and is
+a disconnect. Rx/Tx code (or parts of it) runs "in refcount" context and is
 frequently called. For that reason, the lock should be fast to acquire and
 release. However, a workqueue may sleep, so that side of the lock doesn't need
 to be light weighted. The struct ecm_lock is a synchronization mechanism based
-on an atomic variable and a waitqueue. It works like this:
+on an refcount variable and a waitqueue. It works like this:
 
 static void rx(void)
 {
@@ -388,7 +388,7 @@ Let us have a closer look at how this works. First we have the shmcm_lock data
 type,
 
 struct shmcm_lock {
-        atomic_t count;
+        refcount_t count;
         wait_queue_head_t waitq;
 };
 
@@ -397,7 +397,7 @@ anyone to get the lock!
 
 static inline int shmcm_trylock(struct shmcm_lock *lock)
 {
-        return atomic_positive_inc(&lock->count);
+        return refcount_positive_inc(&lock->count);
 }
 
 If count is greater than 0, shmcm_trylock will increment count and return
@@ -406,7 +406,7 @@ holding the lock (since count is initialized to 1).
 
 static inline void shmcm_unlock(struct shmcm_lock *lock)
 {
-        if (atomic_add_negative(-1, &lock->count))
+        if (refcount_add_negative(-1, &lock->count))
                 wake_up_sync(&lock->waitq);
 }
 
@@ -416,10 +416,10 @@ every shmcm_unlock).
 
 static inline void synchronize_shmcm_lock(struct shmcm_lock *lock)
 {
-        int k = atomic_xchg(&lock->count, 0) - 1;
+        int k = refcount_xchg(&lock->count, 0) - 1;
         if (k <= 0)
                 return;
-        wait_event(lock->waitq, atomic_read(&lock->count) == -k);
+        wait_event(lock->waitq, refcount_read(&lock->count) == -k);
 }
 
 First, count is replaced with 0 and k is assigned the number of users currently

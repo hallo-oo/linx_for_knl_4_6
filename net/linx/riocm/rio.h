@@ -77,13 +77,13 @@ struct RlnhLinkObj {
         struct timer_list conn_timer;
         unsigned long next_conn_tmo;
  	unsigned int connect_tmo;
-        atomic_t conn_timer_lock;
-        atomic_t conn_alive_count;
+        refcount_t conn_timer_lock;
+        refcount_t conn_alive_count;
 
-        atomic_t use_count;
+        refcount_t use_count;
         struct list_head node;
 
-        atomic_t disc_count;
+        refcount_t disc_count;
         struct rio_work *w_disc;
 
         struct rio_device *rio_dev;
@@ -124,8 +124,8 @@ struct RlnhLinkObj {
 	/* fragmentation and reordering*/
 	uint16_t rx_expected_seqno; /* no need for atomic */
 	struct sk_buff **reorder_array;
-	atomic_t tx_seqno; /* needed? all data sent from tasklet... */
-	atomic_t msgid;
+	refcount_t tx_seqno; /* needed? all data sent from tasklet... */
+	refcount_t msgid;
 	struct sk_buff **frag_array;
 	struct sk_buff_head frag_list;
 	
@@ -146,7 +146,7 @@ struct RlnhLinkObj {
 #define RIO_CONN_ALIVE_RESET_VALUE 3
 static inline void rio_mark_conn_alive(struct RlnhLinkObj *co)
 {
-        atomic_set(&co->conn_alive_count, RIO_CONN_ALIVE_RESET_VALUE);
+        refcount_set(&co->conn_alive_count, RIO_CONN_ALIVE_RESET_VALUE);
 }
 
 #ifdef RIO_COMPAT

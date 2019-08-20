@@ -110,7 +110,7 @@ struct linx_sock {
 	spinlock_t skb_alloc_lock;	/* Lock to synchronize
 					 * allocation of skb buffers
 					 * from tasklet context. */
-	atomic_t in_use;                /* Socket in use */
+	refcount_t in_use;                /* Socket in use */
 	struct work_struct close_work;
 	pid_t owner_pid;
 	pid_t owner_tgid;
@@ -179,9 +179,9 @@ struct linx_skb_cb { /* max 40 bytes, depending on kernel version */
 	LINX_ASSERT(linx_sk(sk)->addr->spid != LINX_ILLEGAL_SPID); \
 } while(0)
 
-extern atomic_t linx_no_of_remote_sockets;
-extern atomic_t linx_no_of_link_sockets;
-extern atomic_t linx_no_of_pend_hunt;
+extern refcount_t linx_no_of_remote_sockets;
+extern refcount_t linx_no_of_link_sockets;
+extern refcount_t linx_no_of_pend_hunt;
 
 static inline LINX_SPID linx_sock_to_spid(struct sock *sk)
 {

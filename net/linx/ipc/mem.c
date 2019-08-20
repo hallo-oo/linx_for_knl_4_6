@@ -36,11 +36,11 @@
 #include <linx_trace.h>
 #include <linx_mem.h>
 
-atomic_t linx_total_kmallocs = ATOMIC_INIT(0);
-atomic_t linx_total_kfrees = ATOMIC_INIT(0);
+refcount_t linx_total_kmallocs = ATOMIC_INIT(0);
+refcount_t linx_total_kfrees = ATOMIC_INIT(0);
 
-atomic_t linx_total_vmallocs = ATOMIC_INIT(0);
-atomic_t linx_total_vfrees = ATOMIC_INIT(0);
+refcount_t linx_total_vmallocs = ATOMIC_INIT(0);
+refcount_t linx_total_vfrees = ATOMIC_INIT(0);
 
 #ifdef ERRORCHECKS_MEM
 
@@ -294,13 +294,13 @@ void linx_vfree_errorchecks(void *ptr, const char *fl, int ln)
 
 long linx_validate_kmallocs(void)
 {
-	long sum = atomic_read(&linx_total_kmallocs) -
-	    atomic_read(&linx_total_kfrees);
+	long sum = refcount_read(&linx_total_kmallocs) -
+	    refcount_read(&linx_total_kfrees);
 	if (sum) {
 		linx_debug(LINX_TRACEGROUP_GENERAL,
 			   "kmallocs: %d, kfrees: %d",
-			   atomic_read(&linx_total_kmallocs),
-			   atomic_read(&linx_total_kfrees));
+			   refcount_read(&linx_total_kmallocs),
+			   refcount_read(&linx_total_kfrees));
 
 #ifdef ERRORCHECKS_MEM
 		linx_kdump();
@@ -311,13 +311,13 @@ long linx_validate_kmallocs(void)
 
 long linx_validate_vmallocs(void)
 {
-	long sum = atomic_read(&linx_total_vmallocs) -
-	    atomic_read(&linx_total_vfrees);
+	long sum = refcount_read(&linx_total_vmallocs) -
+	    refcount_read(&linx_total_vfrees);
 	if (sum) {
 		linx_debug(LINX_TRACEGROUP_GENERAL,
 			   "vmallocs: %d, vfrees: %d",
-			   atomic_read(&linx_total_vmallocs),
-			   atomic_read(&linx_total_vfrees));
+			   refcount_read(&linx_total_vmallocs),
+			   refcount_read(&linx_total_vfrees));
 #ifdef ERRORCHECKS_MEM
 		linx_vdump();
 #endif

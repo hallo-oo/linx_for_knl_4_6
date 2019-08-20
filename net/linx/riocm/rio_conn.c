@@ -526,7 +526,7 @@ static void send_rio_conn_pkt(struct RlnhLinkObj *co, int type)
 
 static int rio_conn_dead(struct RlnhLinkObj *co)
 {
-        return atomic_dec_and_test(&co->conn_alive_count);
+        return refcount_dec_and_test(&co->conn_alive_count);
 }
 
 static void handle_dc_conn(struct RlnhLinkObj *co)
@@ -602,7 +602,7 @@ static void handle_conn_tmo(struct RlnhLinkObj *co)
         }
 
         /* Make sure that the timer isn't restarted after a del_timer_sync(). */
-        if (atomic_read(&co->conn_timer_lock) != 0)
+        if (refcount_read(&co->conn_timer_lock) != 0)
                 mod_timer(&co->conn_timer, co->next_conn_tmo);
 }
 
@@ -823,7 +823,7 @@ static struct RlnhLinkObj *alloc_rio_connection(struct riocm_ioctl_create *arg)
         co = kzalloc(sizeof(*co), GFP_KERNEL);
         if (co == NULL)
                 return NULL;
-        atomic_set(&co->use_count, 1);
+        refcount_set(&co->use_count, 1);
 
         size = strlen((char *)kptr(arg, arg->name)) + 1;
         co->con_name = kzalloc(size, GFP_KERNEL);
@@ -840,7 +840,7 @@ static struct RlnhLinkObj *alloc_rio_connection(struct riocm_ioctl_create *arg)
         co->w_disc = alloc_rio_work(size, 0, GFP_KERNEL);
         if (co->w_disc == NULL)
                 goto out;
-        atomic_set(&co->disc_count, 1);
+        refcount_set(&co->disc_count, 1);
 
         return co;
   out:
@@ -887,7 +887,7 @@ static int init_rio_connection(struct RlnhLinkObj *co,
 
         setup_timer(&co->conn_timer, conn_tmo_func, (unsigned long)co);
         co->next_conn_tmo = tmo_ms_rand(co->connect_tmo);
-        atomic_set(&co->conn_alive_count, 0);
+        refcount_set(&co->conn_alive_count, 0);
 
         init_rio_lock(&co->tx_lock, 0); /* Block transmit. */
         init_rio_lock(&co->rx_lock, 0); /* Block deliver of user data. */
@@ -914,7 +914,7 @@ struct RlnhLinkObj *get_rio_conn(struct sk_buff *skb, struct rio_device *dev)
 			if (co->peer_ID == ntohs(ch->sender) &&
 			    co->peer_port == ntohs(ch->src_port) &&
 			    co->my_port == ntohs(ch->dst_port)) {
-				atomic_inc(&co->use_count);
+				refcount_inc(&co->use_count);
 				spin_unlock_bh(&rio_lock);
 				return co;
 			}
@@ -927,7 +927,7 @@ struct RlnhLinkObj *get_rio_conn(struct sk_buff *skb, struct rio_device *dev)
 		co = rio_connection_array[ntohs(uh->dst_cid)];
 		spin_unlock_bh(&rio_lock);
 		if(co != NULL)
-			atomic_inc(&co->use_count);
+			refcount_inc(&co->use_count);
 		return co; /* may be null if not present in array */
 	}
 
@@ -937,7 +937,7 @@ struct RlnhLinkObj *get_rio_conn(struct sk_buff *skb, struct rio_device *dev)
 void put_rio_connection(struct RlnhLinkObj *co)
 {
         spin_lock_bh(&rio_lock);
-        if (unlikely(0 == atomic_dec_return(&co->use_count))) {
+        if (unlikely(0 == refcount_dec_return(&co->use_count))) {
                 spin_unlock_bh(&rio_lock);
                 free_rio_connection(co);
                 return;
@@ -1013,7 +1013,7 @@ static void handle_work_create(struct rio_work *w)
         add_rio_connection(co);
 
         /* Kick things off... */
-        atomic_set(&co->conn_timer_lock, 1);
+        refcount_set(&co->conn_timer_lock, 1);
         mod_timer(&co->conn_timer, co->next_conn_tmo);
   out:
         /* Now it's safe to wake up submitter (waitfor p->co != NULL) */
@@ -1033,7 +1033,7 @@ static void handle_work_destroy(struct rio_work *w)
          * connection. The cleanup work must be the last job for this
          * connection.
          */
-        atomic_set(&p->co->conn_timer_lock, 0);
+        refcount_set(&p->co->conn_timer_lock, 0);
         del_timer_sync(&p->co->conn_timer);
         synchronize_rio_lock(&p->co->conn_rx_lock);
         del_rio_connection(p->co);
@@ -1081,7 +1081,7 @@ static void handle_work_dc_conn(struct rio_work *w)
         struct rio_work_dc_conn *p;
 
         p = w->data;
-        atomic_set(&p->co->disc_count, 1); /* Allow one disconnect. */
+        refcount_set(&p->co->disc_count, 1); /* Allow one disconnect. */
         do_the_gory_stuff(p->co, DC_CONN);
         free_rio_work(w);
 }
@@ -1175,7 +1175,7 @@ static void conn_tmo_func(unsigned long data)
                  * the timer must not be restarted (see handle_work_destroy and
                  * handle_work_cleanup).
                  */
-                if (atomic_read(&co->conn_timer_lock) != 0)
+                if (refcount_read(&co->conn_timer_lock) != 0)
                         mod_timer(&co->conn_timer, co->next_conn_tmo);
                 return;
         }

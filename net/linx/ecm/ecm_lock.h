@@ -38,17 +38,17 @@
 #include <ecm_debug.h>
 
 /*
- * First, some functions inspired by atomic_add_unless()...
+ * First, some functions inspired by refcount_add_unless()...
  */
 
 /*
  * atomic_positive_inc() - if v is positive, increment v and return true.
  */
-static inline int atomic_positive_inc(atomic_t *v)
+static inline int atomic_positive_inc(refcount_t *v)
 {
 	int c, old;
 
-	c = atomic_read(v);
+	c = refcount_read(v);
 	for (;;) {
 		if (unlikely(c <= 0))
 			break;
@@ -64,13 +64,13 @@ static inline int atomic_positive_inc(atomic_t *v)
  * A synchronization mechanism base on an atomic variable and a waitqueue.
  */
 struct ecm_lock {
-        atomic_t count;
+        refcount_t count;
         wait_queue_head_t waitq;
 };
 
 static inline void init_ecm_lock(struct ecm_lock *lock, int v)
 {
-        atomic_set(&lock->count, v);
+        refcount_set(&lock->count, v);
         init_waitqueue_head(&lock->waitq);
 }
 
@@ -79,7 +79,7 @@ static inline void reset_ecm_lock(struct ecm_lock *lock, int v)
         if (waitqueue_active(&lock->waitq))
                 ERROR();
 
-        atomic_set(&lock->count, v);
+        refcount_set(&lock->count, v);
 }
 
 static inline int ecm_trylock(struct ecm_lock *lock)
@@ -89,7 +89,7 @@ static inline int ecm_trylock(struct ecm_lock *lock)
 
 static inline void ecm_unlock(struct ecm_lock *lock)
 {
-        if (atomic_add_negative(-1, &lock->count))
+        if (refcount_add_negative(-1, &lock->count))
                 wake_up_interruptible_sync(&lock->waitq);
 }
 
@@ -104,7 +104,7 @@ static inline void synchronize_ecm_lock(struct ecm_lock *lock)
          * Hmm, we should check return value, but the problem is what to do
          * if -ERESTARTSYS is returned! Use wait_event() instead?
          */
-        wait_event_interruptible(lock->waitq, atomic_read(&lock->count) == -k);
+        wait_event_interruptible(lock->waitq, refcount_read(&lock->count) == -k);
 }
 
 #endif

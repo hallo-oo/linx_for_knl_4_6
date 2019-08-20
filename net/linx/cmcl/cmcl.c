@@ -99,10 +99,10 @@ struct RlnhLinkObj
         int state;
         unsigned int con_attempts;
         struct timer_list con_timer;
-        atomic_t con_timer_lock;
+        refcount_t con_timer_lock;
         unsigned long con_tmo;
 	int alive_cnt;
-        atomic_t use_count;
+        refcount_t use_count;
 	struct list_head deliver_queue;
 };
 
@@ -414,7 +414,7 @@ static struct RlnhLinkObj *alloc_cmcl_con(struct cmcl_ioctl_create *p)
         if (co->con_name == NULL)
                 goto out;
 
-        atomic_set(&co->use_count, 1);
+        refcount_set(&co->use_count, 1);
 
         return co;
 out:
@@ -540,7 +540,7 @@ static void handle_cmcl_work_create(struct cmcl_work *w)
         /* Do not fire con_timer if heart-beats are disabled*/
         if(likely(p->arg->con_tmo != 0xFFFFFFFF))
         {
-                atomic_set(&co->con_timer_lock, 1);
+                refcount_set(&co->con_timer_lock, 1);
                 mod_timer(&co->con_timer, tmo_ms(co->con_tmo));
         }
         status = 0; /* Note: wakeup_cmcl_work requires that status is <= 0. */
@@ -558,7 +558,7 @@ static void handle_cmcl_work_destroy(struct cmcl_work *w)
          * We must stop users from submitting any more jobs for this
          * connection.
          */
-        atomic_set(&p->co->con_timer_lock, 0);
+        refcount_set(&p->co->con_timer_lock, 0);
         del_timer_sync(&p->co->con_timer);
 
         /*
@@ -803,7 +803,7 @@ static void handle_conn_tmo(struct RlnhLinkObj *co)
         }
 
         /* Make sure that the timer isn't restarted after a del_timer_sync(). */
-        if (atomic_read(&co->con_timer_lock) != 0)
+        if (refcount_read(&co->con_timer_lock) != 0)
                 mod_timer(&co->con_timer, tmo_ms(co->con_tmo));
 }
 
@@ -1152,12 +1152,12 @@ void cmcl_uc_disconnected(void *co)
 
 void cmcl_get_con(struct RlnhLinkObj *co)
 {
-        atomic_inc(&co->use_count);
+        refcount_inc(&co->use_count);
 }
 
 void cmcl_put_con(struct RlnhLinkObj *co)
 {
-        if (atomic_dec_return(&co->use_count) == 0)
+        if (refcount_dec_return(&co->use_count) == 0)
                 free_cmcl_con(co);
 }
 

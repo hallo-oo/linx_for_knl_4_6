@@ -269,7 +269,7 @@ static void tx_tasklet_free_acknowledged_pkts(struct RlnhLinkObj *co)
 	while (co->tx_queue_size > 0) {
 		skb = skb_peek(&co->tx_queue);
 		ack_hdr = ntoh_unaligned(skb->data, ACK_HDR_OFFSET);
-		if (get_seqno(ack_hdr) == atomic_read(&co->tx_last_ack))
+		if (get_seqno(ack_hdr) == refcount_read(&co->tx_last_ack))
 			break;
 		__skb_unlink(skb, &co->tx_queue);
 		kfree_skb(skb);
@@ -347,8 +347,8 @@ static void tx_tasklet_handle_tmo(struct RlnhLinkObj *co)
 	 * received since last tx timeout.
 	 */
 	if (likely(co->tx_queue_size == 0 ||
-		   (co->tx_last_timer_ack != atomic_read(&co->tx_last_ack)))) {
-		co->tx_last_timer_ack = atomic_read(&co->tx_last_ack);
+		   (co->tx_last_timer_ack != refcount_read(&co->tx_last_ack)))) {
+		co->tx_last_timer_ack = refcount_read(&co->tx_last_ack);
 		return;
 	}
 
@@ -449,7 +449,7 @@ void ecm_update_last_ackno(struct RlnhLinkObj *co, int new)
 	int last;
 	int old;
 	
-	last = atomic_read(&co->tx_last_ack);
+	last = refcount_read(&co->tx_last_ack);
 	for (;;) {
 		if (unlikely(new == last))
 			return;
@@ -468,13 +468,13 @@ void ecm_update_last_ackno(struct RlnhLinkObj *co, int new)
 }
 
 /* get a new exclusive fragno */
-static inline int get_exclusive_fragno(atomic_t *fragno)
+static inline int get_exclusive_fragno(refcount_t *fragno)
 {
 	int new;
 	int last;
 	int old;
 
-	last = atomic_read(fragno);
+	last = refcount_read(fragno);
 	for (;;) {
 		new = (last + 1) & 0x7ff;
 		old = atomic_cmpxchg(fragno, last, new);
@@ -664,7 +664,7 @@ static void tx_tmo(unsigned long arg)
 	struct RlnhLinkObj *co;
 
 	co = (struct RlnhLinkObj *)arg;
-	atomic_set(&co->tx_tmo, 1);
+	refcount_set(&co->tx_tmo, 1);
 	schedule_tx_tasklet(co);
 	mod_timer(&co->tx_timer, jiffies + msecs_to_jiffies(TX_TIMER));
 }
@@ -705,9 +705,9 @@ void ecm_start_tx(struct RlnhLinkObj *co)
 	skb_queue_head_init(&co->tx_queue);	
 	skb_queue_head_init(&co->nack_queue);
 	
-	atomic_set(&co->tx_last_ack, 0);
-	atomic_set(&co->tx_tmo, 0);
-	atomic_set(&co->fragno, 0);
+	refcount_set(&co->tx_last_ack, 0);
+	refcount_set(&co->tx_tmo, 0);
+	refcount_set(&co->fragno, 0);
 	
 	setup_timer(&co->tx_timer, tx_tmo, (unsigned long)co);
 	tasklet_init(&co->tx, tx_tasklet, (unsigned long)co);

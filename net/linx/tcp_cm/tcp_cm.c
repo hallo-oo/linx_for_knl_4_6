@@ -136,7 +136,7 @@ MODULE_PARM_DESC(linx_tcp_cm_ipv6_support, "LINX TCP CM IPv6 support");
                                                 (d)->dst, (d)->size, (d)->skb)
 
 /* one global needed here */
-static atomic_t wq_len = ATOMIC_INIT(0);
+static refcount_t wq_len = ATOMIC_INIT(0);
 
 #if(LINUX_VERSION_CODE < KERNEL_VERSION(2,6,20))
 #define WQ_TYPE void
@@ -923,7 +923,7 @@ static struct wq_task_object *wqo_create(uint32_t index)
 {
 	struct wq_task_object *w;
 
-	if (atomic_read(&wq_len) >= linx_tcp_cm_max_wq_len)
+	if (refcount_read(&wq_len) >= linx_tcp_cm_max_wq_len)
 		linx_warn("Long workqueue");
 
 	w = KMALLOC(sizeof(*w));
@@ -934,7 +934,7 @@ static struct wq_task_object *wqo_create(uint32_t index)
 	}
 	w->index = index;
 	w->trans_data = NULL;
-	atomic_inc(&wq_len);
+	refcount_inc(&wq_len);
 	return w;
 }
 
@@ -943,7 +943,7 @@ static struct wq_task_object *wqo_create_w_buf(uint32_t index, uint32_t size)
 	struct wq_task_object *w = NULL;
 	struct t_data *item = 0;
 
-	if (atomic_read(&wq_len) >= linx_tcp_cm_max_wq_len)
+	if (refcount_read(&wq_len) >= linx_tcp_cm_max_wq_len)
 		linx_warn("Max wq len overridden!");
         /*
 	 * NOTE: only one allocation here. so do NOT do a wqo_free
@@ -964,7 +964,7 @@ static struct wq_task_object *wqo_create_w_buf(uint32_t index, uint32_t size)
 	item->remaining = size;
 	item->skb = NULL;	/* not used in submission */
 	item->peer_version = 0;
-	atomic_inc(&wq_len);
+	refcount_inc(&wq_len);
 	if (size == 0) /* minor bloat avoid interpretion of erroneous pointer */
 		item->data = NULL;
 	return w;
@@ -980,7 +980,7 @@ static struct wq_task_object *wqo_create_w_skb(uint32_t index, uint32_t size)
 {
 	struct wq_task_object *w;
 
-	if (atomic_read(&wq_len) >= linx_tcp_cm_max_wq_len)
+	if (refcount_read(&wq_len) >= linx_tcp_cm_max_wq_len)
 		linx_warn("Max wq len overridden!");
 
         /* NOTE: deliver on the data element. use skb to avoid memcpy */
@@ -999,7 +999,7 @@ static struct wq_task_object *wqo_create_w_skb(uint32_t index, uint32_t size)
         /* these are not used in deliver. set them to zero. */
 	w->trans_data->pos = NULL;
 	w->trans_data->remaining = 0;
-	atomic_inc(&wq_len);
+	refcount_inc(&wq_len);
 	return w;
  free_w:
 	KFREE(w);
@@ -1011,7 +1011,7 @@ static struct wq_task_object *wqo_create_w_skb(uint32_t index, uint32_t size)
 
 static void wqo_free(struct wq_task_object *w)
 {
-	atomic_dec(&wq_len);
+	refcount_dec(&wq_len);
 	KFREE(w);
 }
 
